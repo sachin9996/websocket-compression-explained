@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket compression explained (sort of)</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="styles.min.css">
+</head>
+
+<script type="module" src="bundle.min.js" defer></script>
+
+<body>
+    <h1 style="text-align: center;">WebSocket compression explained (sort of)</h1>
+
+    <p>
+        In a <a class="link-text" href="https://sachin9996.github.io/websocket-frames-explained">previous article</a>, I
+        talked about how the WebSocket protocol works and how <em>simple</em> it is. But since no good thing can last
+        forever, some people decided to complicate things a bit.
+    </p>
+
+    <p>
+        To be fair, this isn't a part of the base WebSocket protocol, but rather an extension to the protocol. The most
+        common extension by far is <code>permessage-deflate</code> compression.
+    </p>
+
+    <p>
+        Let's quickly revisit how the WebSocket protocol works before looking at extensions. If you just want to click
+        around, there's a small <a class="link-text" href="#interactive">demo</a> at the bottom.
+    </p>
+
+    <h2 id="recap" style="margin: 1.5em 0 1em 0;">Recap<a class="internal-link" href="#recap">#</a></h2>
+
+    <p>
+        WebSocket communication is structured as <em>messages</em> exchanged between a client and server. Each
+        <em>message</em> is made up of one or more <em>frames</em>. Each frame has a one-byte header, information
+        around the length of the payload, and the payload itself. Here's a simple WebSocket message that says "Hello":
+    </p>
+
+    <div
+        style="display: flex; flex-wrap: wrap; font-family: monospace; font-size: 11px; margin: 2em auto; gap: 10px; justify-content: center; user-select: none;">
+        <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+            <div style="padding: 6px 8px; border-radius: 6px; background: #0891b2; color: white; user-select: none;">
+                81
+            </div>
+            <div style="margin-top: 8px; color: #0891b2; text-align:center; user-select: none;">header</div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+            <div style="padding: 6px 8px; border-radius: 6px; background: #ea580c; color: white; user-select: none;">
+                05
+            </div>
+            <div style="margin-top: 8px; color: #ea580c; text-align:center; user-select: none;">len</div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+            <div style="padding: 6px 8px; border-radius: 6px; background: #059669; color: white; user-select: none;">
+                48 65 6c 6c 6f
+            </div>
+            <div style="margin-top: 8px; color: #059669; text-align:center; user-select: none;">payload ("Hello")</div>
+        </div>
+    </div>
+
+    <h2 id="why-bother-compressing" style="margin: 1.5em 0 1em 0;">Why bother compressing?<a class="internal-link"
+            href="#why-bother-compressing">#</a></h2>
+
+    <p>
+        Let's say you're sending JSON messages over WebSockets. Each message follows a similar structure, which makes
+        them highly compressible. </p>
+
+    <p>
+        As an example, imagine synchronizing the state of two grids using WebSocket messages. Pick a color and click on
+        a cell in either grid to fill it in. Below the grids you'll see the messages that might be sent/received on each
+        side to achieve synchronization.
+    </p>
+
+    <div id="whiteboardDemo" class="whiteboard-demo"></div>
+    <noscript
+        style="display: flex; justify-content: center; align-items: center; padding: 5px; background-color: #facc15; color: #1e293b;">
+        <span style="text-align: center; max-width: 300px;">
+            JavaScript is disabled on your browser. Enable it to see this demo.
+        </span>
+    </noscript>
+
+    <p style="margin-top: 30px;">
+        That's a lot of repeated bytes each time: the "row", "col", and "color" strings are transmitted every message.
+        Depending on how compressible the data is, the reduced payload sizes may be worth the compression/decompression
+        overhead.
+    </p>
+
+    <h2 id="permessage-deflate-compression" style="margin: 1.5em 0 1em 0;"><code>permessage-deflate</code> compression<a
+            class="internal-link" href="#permessage-deflate-compression">#</a></h2>
+
+    <p>
+        Let's start by looking at a WebSocket handshake since that's where compression is negotiated as a part of the
+        <code>Sec-WebSocket-Extensions</code> header:
+    </p>
+
+    <div class="handshake-container">
+        <div class="request-box">
+            <div class="box-title">Request</div>
+            <div class="method-line">GET /websocket HTTP/1.1</div>
+            <div class="header-line">Host: example.com</div>
+            <div class="header-line">Upgrade: websocket</div>
+            <div class="header-line">Connection: Upgrade</div>
+            <div class="header-line">Sec-WebSocket-Key: U8/Zkk/B5hjr+jx2lXMcCQ==</div>
+            <div class="header-line">Sec-WebSocket-Version: 13</div>
+            <div class="extension-line">Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15;
+                client_no_context_takeover</div>
+        </div>
+        <div class="response-box">
+            <div class="box-title">Response</div>
+            <div class="method-line">HTTP/1.1 101 Switching Protocols</div>
+            <div class="header-line">Upgrade: websocket</div>
+            <div class="header-line">Connection: Upgrade</div>
+            <div class="header-line">Sec-WebSocket-Accept: 0W3rkxpf+uZNg3rYkDWr6Jj8/gU=</div>
+            <div class="extension-line">Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=15;
+                server_max_window_bits=15;
+                client_no_context_takeover; server_no_context_takeover</div>
+        </div>
+    </div>
+
+    <p>
+        The client and server agree on using the <code>permessage-deflate</code> extension (it's the only one with a
+        published spec for now). The compression algorithm used by <code>permessage-deflate</code> is called DEFLATE.
+        The details of how it works aren't important, but a couple of parameters are relevant from the handshake:
+    </p>
+
+    <ul style="display: flex; flex-direction: column; gap: 5px;">
+        <li>
+            <strong>max_window_bits</strong>: Controls the size of the sliding window used interally.
+            DEFLATE works by representing repeated data as length-distance pairs. At each
+            step it searches for matches in the last 2<sup>max_window_bits</sup> bytes of (uncompressed) data.
+            <p>
+                This means a larger window could allow for better compression if repeated patterns span a larger
+                distance.
+            </p>
+        </li>
+        <li>
+            <strong>no_context_takeover</strong>: If set to true, clear the sliding window after each
+            WebSocket message. This makes the decompression step stateless, but prevents DEFLATE from taking advantage
+            of patterns that repeat across WebSocket messages.
+        </li>
+    </ul>
+
+    <p>Since WebSockets are bidirectional, both these parameters have client and server variants. That gives us what we
+        actually see in the handshake:
+        <strong>client_max_window_bits</strong>,
+        <strong>client_no_context_takeover</strong>, <strong>server_max_window_bits</strong>, and
+        <strong>server_no_context_takeover</strong>.
+    </p>
+
+    <details
+        style="font-size: 14px; margin: 2em auto; background-color: #0f172a; border: 1px solid #334155; border-radius: 4px; padding: 1em;">
+        <summary style="font-size: 1.1em; font-weight: 600; cursor: pointer; outline: none;">How is the sliding window
+            used?</summary>
+        <p>
+            When compressing, DEFLATE consumes the input one byte at a time and keeps track of the last <span
+                style="font-family: monospace; font-style: italic;">b</span>
+            bytes read. If the next <span style="font-family: monospace; font-style: italic;">l</span> bytes in the
+            stream are a substring<sup><a class="link-text" href="#footnote">1</a></sup>
+            of this sliding window, DEFLATE will encode it as the pair <span
+                style="font-family: monospace; font-style: italic;">(l,
+                d)</span>, where <span style="font-family: monospace; font-style: italic;">d</span> is the distance from
+            the cursor to the start of the match in the sliding window.
+        </p>
+
+        <p>
+            Here's a demo showing this in action. Use the <span
+                style="background-color: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 0 2px; font-size: 14px;">←</span>
+            and <span
+                style="background-color: #334155; color: #e2e8f0; border: 1px solid #475569; border-radius: 4px; padding: 0 2px; font-size: 14px;">→</span>
+            buttons to see how the input is encoded, one step at a time. At each step you can see the <span
+                style="border: 1px solid #35b9d3; background-color: #35b9d333; padding: 0 2px; border-radius: 2px; white-space: nowrap; user-select: none;">sliding
+                window</span>, what's <span style="color: #f59e0b; font-weight: 700; user-select: none;">currently being
+                read</span>, and a
+            <span style="color: #10b981; font-weight: 700; user-select: none;">match</span> if there is one.
+        </p>
+
+        <div id="slidingWindowDemo"></div>
+        <noscript
+            style="display: flex; justify-content: center; align-items: center; padding: 5px; background-color: #facc15; color: #1e293b;">
+            <span style="text-align: center; max-width: 300px;">
+                JavaScript is disabled on your browser. Enable it to see this demo.
+            </span>
+        </noscript>
+
+        <p>
+            Larger matches are found as the sliding window gets bigger. For example, with a sliding window of size 9,
+            there's a match of length 6 at the end. At shorter SW lengths, only matches of length 3 are present.
+        </p>
+
+        <p>
+            For WebSockets, the <strong>max_window_bits</strong> parameters <a class="link-text" target="_blank"
+                href="https://datatracker.ietf.org/doc/html/rfc7692#section-7.1.2.1">MUST</a> lie between 8 and 15
+            (inclusive)
+            so the actual sliding windows can range from 2<sup>8</sup> to 2<sup>15</sup> bytes long.
+        </p>
+
+        <div style="font-size: 11px; padding: 5px; border-radius: 4px; margin-top: 60px; color:#777">
+            <div style="margin-bottom: 12px; font-style: italic;">
+                <sup id="footnote">1</sup>Technically this isn't always true, and the match could be longer than the
+                sliding window! With a SW of size 11, the string
+            </div>
+
+            <div style="color:#999; font-family: monospace; margin: 8px 0; padding: 8px; background-color: rgba(30,
+                    41, 59, 0.5); border-radius: 3px; user-select: none;">
+                Developers,developers,developers!
+            </div>
+
+            <div style="margin: 8px 0;">can be encoded as</div>
+
+            <div
+                style="font-family: monospace; color: #999; margin: 8px 0; padding: 8px; background-color: rgba(30, 41, 59, 0.5); border-radius: 3px; user-select: none;">
+                D e v e l o p e r s , d (l=20,d=11) !</div>
+
+            <div style="margin-top: 12px; font-style: italic;">
+                The idea is that generating the match allows you to reference it as you go, which to me feels a bit like
+                doing <a class="link-text" target="_blank" style="text-decoration: none;"
+                    href="https://tenor.com/view/wallace-and-gromit-train-tracks-work-swift-fast-gif-3793283">this</a>.
+            </div>
+        </div>
+    </details>
+
+    <p>After establishing these parameters, we can finally send a compressed message. Let's send "hahahaha" from the
+        server to the client.
+    </p>
+
+    <h2 id="over-the-wire" style="margin: 1.5em 0 1em 0;">Over the wire<a class="internal-link"
+            href="#over-the-wire">#</a></h2>
+
+    Here's what that looks like as a WebSocket frame. If this doesn't make sense, I explain the
+    structure of WebSocket frames <a class="link-text" target="_blank"
+        href="https://sachin9996.github.io/websocket-frames-explained/">here</a>.
+
+    <div
+        style="display: flex; flex-wrap: wrap; font-family: monospace; font-size: 11px; margin: 2em auto; gap: 10px; justify-content: center; user-select: none;">
+        <div style="display: flex; flex-direction: column; align-items: center; position: relative; user-select: none;">
+            <div style="padding: 6px 8px; border-radius: 6px; background: #0891b2; color: white; user-select: none;">
+                c1
+            </div>
+            <div style="margin-top: 8px; color: #0891b2; text-align:center; user-select: none;">header</div>
+
+            <div
+                style="width: 2px; height: 20px; background: repeating-linear-gradient(to bottom, #0891b2, #0891b2 2px, transparent 2px, transparent 4px); margin: 8px 0; user-select: none;">
+            </div>
+
+            <div style="display: flex; margin-top: 8px; gap: 1px; font-size: 9px; user-select: none;">
+                <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+                    <div
+                        style="background: #0891b2; color: white; padding: 3px 6px; border-radius: 3px; user-select: none;">
+                        1</div>
+                    <div style="margin-top: 3px; color: #0891b2; text-align:center; user-select: none;">FIN</div>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+                    <div
+                        style="background: #0891b2; color: white; padding: 3px 6px; border-radius: 3px; user-select: none;">
+                        1</div>
+                    <div style="margin-top: 3px; color: #0891b2; text-align:center; user-select: none;">RSV1</div>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+                    <div
+                        style="background: #6b7280; color: white; padding: 3px 6px; border-radius: 3px; user-select: none;">
+                        0</div>
+                    <div style="margin-top: 3px; color: #6b7280; text-align:center; user-select: none;">RSV2</div>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+                    <div
+                        style="background: #6b7280; color: white; padding: 3px 6px; border-radius: 3px; user-select: none;">
+                        0</div>
+                    <div style="margin-top: 3px; color: #6b7280; text-align:center; user-select: none;">RSV3</div>
+                </div>
+                <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+                    <div
+                        style="background: #0891b2; color: white; padding: 3px 6px; border-radius: 3px; user-select: none;">
+                        0001</div>
+                    <div style="margin-top: 3px; color: #0891b2; text-align:center; user-select: none;">opcode</div>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+            <div style="padding: 6px 8px; border-radius: 6px; background: #ea580c; color: white; user-select: none;">
+                07
+            </div>
+            <div style="margin-top: 8px; color: #ea580c; text-align:center; user-select: none;">len</div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; align-items: center; user-select: none;">
+            <div style="padding: 6px 8px; border-radius: 6px; background: #059669; color: white; user-select: none;">
+                ca 48 cc 00 43 00 00
+            </div>
+            <div style="margin-top: 8px; color: #059669; text-align:center; user-select: none;">
+                <div>compressed payload</div>
+                <div>("hahahaha")</div>
+            </div>
+        </div>
+    </div>
+
+    <p>
+        The RSV1 bit is set in the header, which indicates that compression is enabled for this message. WebSocket
+        libaries can choose whether to enable compression on a per-message basis (it's called
+        <code>permessage-deflate</code> after all).
+    </p>
+
+    <p>
+        As for the payload, the spec says to append <span
+            style="padding: 3px 4px; border-radius: 6px; background: #059669; color: white; font-family: monospace; font-size: 11px; user-select: none;">
+            00 00 ff ff</span> (a sort of delimiter) and decompress using DEFLATE. This is a little involved so you'll
+        have to trust me when I say that doing this gives back the string "hahahaha".
+    </p>
+
+    <h2 id="interactive" style="margin: 1.5em 0 1em 0;">The part that's interactive<a class="internal-link"
+            href="#interactive">#</a></h2>
+
+    <p>
+        Play around with the data distribution, message length and sliding window size to see the effects they have on
+        compression.
+    </p>
+
+    <p>
+        Each scenario simulates sending 5 WebSocket messages over the wire, with the sliding window reused across
+        messages. Hover or tap on a message to see its plaintext.
+    </p>
+
+    <div id="compressionDemo" class="compression-demo"></div>
+    <noscript
+        style="display: flex; justify-content: center; align-items: center; padding: 5px; background-color: #facc15; color: #1e293b;">
+        <span style="text-align: center; max-width: 300px;">
+            JavaScript is disabled on your browser. Enable it to see this demo.
+        </span>
+    </noscript>
+
+    <p>I know I didn't explain <em>everything</em> about WebSocket compression, but I think this is a good place to
+        stop before I lose your attention :)
+    </p>
+
+    <p>
+        If you're interested in seeing some code, I wrote a WebSocket parser for Subtrace and added support for
+        <code>permessage-deflate</code> compression <a class="link-text" target="_blank"
+            href="https://github.com/subtrace/subtrace/commit/0778db6fe8d8a8a0970fb19f43d5b4271877ac1c">here</a>.
+    </p>
+
+    <footer style="padding-top: 1em; font-size: 0.9em; color: #888888;">
+        <p>
+            Source code available on <a class="link-text"
+                href="https://github.com/sachin9996/websocket-compression-explained/" target="_blank">GitHub</a>.
+        </p>
+    </footer>
+
+</body>
+
+</html>

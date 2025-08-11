@@ -1,0 +1,13 @@
+{
+  "name": "websocket-compression-explained",
+  "scripts": {
+    "deploy": "npx gh-pages -d dist"
+  },
+  "dependencies": {
+    "pako": "2.1.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.8",
+    "gh-pages": "6.3.0"
+  }
+}
